@@ -183,3 +183,103 @@ this.bookService.getBooksFromStore().pipe(
  }
 ); 
 ```
+### Using Tap
+Tap RxJs operator returns an observable that is identical to the source. It does not modify the stream in any way. Tap operator is useful for logging the value, debugging the stream for the correct values, or perform any other side effects.
+
+We use the pipe to chain the tap operator, which just logs the values of the source observable into the console.
+```javascript
+of(1, 2, 3, 4, 5)
+      .pipe(
+        tap(val => {
+          console.log("Tap " + val);
+        })
+      )
+      .subscribe(val => console.log("at Subscriber " + val));	
+```
+The result of console is:
+```javascript
+Tap 1
+at Subscriber 1
+Tap 2
+at Subscriber 2
+Tap 3
+at Subscriber 3
+Tap 4
+at Subscriber 4
+Tap 5
+at Subscriber 5	
+```
+One of the use cases for the tap operator is using it to debug the Observable for the correct values.
+The map operator in the following example, adds 5 to the source observable. To debug it, we can add the two tap operators. One before and one after it and inspect the values.
+```javascript
+of(1, 2, 3, 4, 5)
+      .pipe(
+        tap(val => {
+          console.log("before " +val);
+        }),
+        map(val => {
+          return val + 5;
+        }),
+        tap(val => {
+          console.log("after " +val);
+        })
+      )
+      .subscribe(val => console.log(val));
+ 
+ 
+ 
+**Console**
+before 1
+after 6
+6
+before 2
+after 7
+7
+before 3
+after 8
+8	
+```
+	
+We can also use the tap operator to log the error and complete callbacks as shown in the example below.
+```javascript
+ of(1, 2, 3, 4, 5)
+      .pipe(
+        tap(val => {
+          console.log("Before " + val);
+        }),
+        map(val => {
+          if (val == 3) {
+            throw Error;
+          }
+          return val + 5;
+        }),
+        tap(
+          val => {
+            console.log("After " + val);
+          },
+          err => {
+            console.log("Tap Error");
+            console.log(err);
+          },
+          () => {
+            console.log("Tap Complete");
+          }
+        )
+      )
+      .subscribe(val => console.log(val));
+
+***Console ***
+Before 1
+After 6
+6
+Before 2
+After 7
+7
+Before 3
+Tap Error
+ ƒ Error()
+ 
+ERROR
+ ƒ Error()
+	
+```
