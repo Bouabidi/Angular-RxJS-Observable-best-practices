@@ -1,3 +1,4 @@
+https://medium.com/grensesnittet/5-helpful-rxjs-solutions-d34f7c2f1cd9
 # Angular-RxJS-Observable-best-practices
 ## Angular + Observable 
 
@@ -284,4 +285,121 @@ ERROR
 	
 ```
 ## Best Practices
-	###
+### Pipeable operators
+```javascript
+// BAD: This is the old way and should be avoided (patch operators)
+// as we can see the operators (filter, map) are part of the
+// Observable prototype
+import 'rxjs/add/operator/filter';
+import 'rxjs/add/operator/map';
+const new$ = Observable.interval$
+    .filter(v => v % 2 === 0)
+    .map(v => v * 2);
+
+// GOOD: This is the new and improved way (lettable operators)
+// we just use the pipe operator where we pass operators that
+// we can import from 'rxjs/operators'
+import {filter, map} from 'rxjs/operators';
+const new$ = interval$
+    .pipe(
+        filter(v => v % 2 === 0),
+        map(v => v *2)
+    )	
+```
+### Marble diagrams
+A cool way of visualising streams but it’s hard to put those marble-diagrams in our code right?! There is an ASCII variant of these marble-diagrams that we can use to describe and document our complex streams and how they interact with each other.
+To check a real example and how we might document it:	
+```javascript
+const interval$ = interval(1000)            // 0--1--2--3--4--5--6...
+const new$ = interval$
+    .pipe(
+        skip(1),                            // ---1--2--3--4--5--6...
+        take(5),                            // ---1--2--3--4--5|
+        filter(v => v % 2 === 0),           // ------2-----4---|
+        map(v => v + 1)                     // ------3-----5---|
+    )
+```
+### Handling of multiple HTTP requests
+#### Scenario 1: Sequential requests. Using data from previous requests in next requests.
+We are often required to make requests based on the response from earlier requests. This is true in the scenario below.
+1. We first retrieve a post based on an id.
+2. Using the post response from the first call, we then want to retrieve the user of the post.
+3. After we have the user we want to get all the posts of the retrieved user.
+```javascript
+this.postService.loadPost(postId).subscribe(post => {
+   this.userService.loadUser(post.userId).subscribe(user => {
+     this.postService.loadPosts(user.id).subscribe(posts => {
+ ...
+	
+```
+This can be easily simplified with the operator switchMap. The functionality of switchMap lies in its name. After the first observable emits it then subscribes to an inner observable.
+	
+This is perfect for our scenario. We want to use our first observable of posts and map the result to a new observable that loads users.
+The operator will take the outer observable of a post and when it emits, switch to the inner observable of ‘user’ and map the result of the outer observable to our inner observable.	
+	
+```javascript
+this.postService.loadPost(postId).pipe(
+     // map our observable of a post to a new observable of user
+     switchMap(post => this.userService.loadUser(post.userId)),
+
+     // map our previous observable of a user to a new observable of all the users posts
+     switchMap(user => this.userService.loadPosts(user.id)),
+   )
+   .subscribe(posts => console.log(posts));
+```
+#### Scenario 2: Making parallel requests.
+Sometimes we don’t care about the order in which multiple requests finish. We may just want to collect them once they are all done. Say we only have a userId. We want to get all the posts the user has made and metadata about the same user.
+As each of these two requests are independent of each other the order in which they finish is not important. We do however want to wait until we have the data from both. Often when loading data we also want to show some sort of loading-indicator.
+Below is a naive solution where we patch an object to indicate that we have the data.	
+```javascript
+let userWithPosts = {
+  user: null,
+  posts: null
+};
+
+this.postService.loadPosts(userId).subscribe(posts => {
+  userWithPosts.posts = posts;
+});
+
+this.userService.loadUser(userId).subscribe(user => {
+  userWithPosts.user = user;
+});
+
+// In HTML
+<p *ngIf=”!(userWithPosts.user || userWithPosts.posts)”>Loading...</p>
+<div *ngIf=”userWithPosts.user && userWithPosts.posts”>... do stuff with the data</div>
+```
+With RxJs this can be solved in just a few lines of code with the operator forkJoin.
+```javascript
+let userWithPosts;
+
+forkJoin({
+  posts: this.postService.loadPosts(userId)
+  user: this.userService.loadUser(userId)
+}).subscribe(response => {
+  this.userWithPosts = response;
+ })
+
+ // In HTML
+ <p *ngIf=”!userWithPosts”>Loading...</p>
+ <div *ngIf=”userWithPosts”>... do stuff with the data</div>	
+```
+### Combining multiple streams into one for a search feature
+Implement a smart search where requests were composed of multiple sources such as:
+1. A searchTerm$ coming from an input field
+2. A set of metadataFilters$ (ranges, checkboxes)
+3. A set of polygons$ that could be drawn on a map
+4. The currentResultPage$ coming from a result page with pagination buttons
+The source data came from different components and so we needed an easy readable way of combining them in one handy stream.
+	
+Solution: combineLatest
+The combineLatest function combines an array of streams into one and emits them all whenever one of them changes.
+```javascript
+combineLatest([
+  this.searchTerm$,
+  this.metadataFilters$,
+  this.polygons$,
+  this.currentResultPage$
+]).subscribe(requestBody => this.search(requestBody))	
+```
+We can improve our solution further with a new operator debounceTime and our friend from our first scenario switchMap. Remember from before that another feature of switchMap is that it will cancel the previous request if a new one is made before the current one has completed. This means we always get the result from the request that was made last.	
